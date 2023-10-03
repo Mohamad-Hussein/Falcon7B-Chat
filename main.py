@@ -1,9 +1,38 @@
-from transformers import pipeline, AutoTokenizer, FalconForQuestionAnswering, AutoModelForCausalLM
-from transformers import AutoConfig
+from typing import List
+
+from langchain.prompts import PromptTemplate
+from langchain.memory import ConversationBufferWindowMemory
+from langchain.chains import ConversationChain
+from langchain.llms import HuggingFacePipeline
+
 import torch
 
-from transformers import BitsAndBytesConfig
+from transformers import pipeline, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import StoppingCriteria, StoppingCriteriaList
 
+# Parameters to tune
+num_saved_mes = 6
+max_length = 296 * 2
+
+# This is a quick way to stop rambling
+class StopGenerationCriteria(StoppingCriteria):
+    def __init__(
+        self, tokens: List[List[str]], tokenizer: AutoTokenizer, device: torch.device
+    ):
+        stop_token_ids = [tokenizer.convert_tokens_to_ids(t) for t in tokens]
+        self.stop_token_ids = [
+            torch.tensor(x, dtype=torch.long, device=device) for x in stop_token_ids
+        ]
+ 
+    def __call__(
+        self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs
+    ) -> bool:
+        for stop_ids in self.stop_token_ids:
+            if torch.eq(input_ids[0][-len(stop_ids) :], stop_ids).all():
+                return True
+        return False
+    
 quantization_config = BitsAndBytesConfig(
     load_in_4bit=True,
     bnb_4bit_compute_dtype=torch.float16,
@@ -15,24 +44,38 @@ quantization_config = BitsAndBytesConfig(
 model_src = "tiiuae/falcon-7b-instruct"
 cache_dir = "models/"
 
+# Loading model
 model_4bit = AutoModelForCausalLM.from_pretrained(
         model_src, 
         device_map="auto",
         quantization_config=quantization_config,
-        cache_dir=cache_dir
-        )
-model_4bit.to_bettertransformer()
+        cache_dir=cache_dir,
 
+        # Change to true to use model from remote, and avoid downloading 20Gb
+        trust_remote_code=False 
+        )
+
+model_4bit.to_bettertransformer()
+model_4bit = model_4bit.eval()
+
+# Making tokenizer
 tokenizer = AutoTokenizer.from_pretrained(model_src, cache_dir=cache_dir)
 
+# Making criteria for stopping model from rambling or imagining
+stop_tokens = [["Human", ":"], ["AI", ":"]]
+stopping_criteria = StoppingCriteriaList(
+    [StopGenerationCriteria(stop_tokens, tokenizer, model_4bit.device)]
+)
 
+# Pipeline for models
 pipe = pipeline(
         "text-generation",
         model=model_4bit,
         tokenizer=tokenizer,
         use_cache=True,
         device_map="auto",
-        max_length=296,
+        stopping_criteria=stopping_criteria, # Criteria
+        max_length=max_length,
         do_sample=True,
         top_k=10,
         num_return_sequences=1,
@@ -40,10 +83,52 @@ pipe = pipeline(
         pad_token_id=tokenizer.eos_token_id,
 )
 
-while(1):
-    user_input = input("\nType your query: ")
-    if user_input.lower() == "quit": break
-    response = pipe(user_input)
-    print(f"Falcon: {response[0]['generated_text']}\n")
+# Wrapping pipeline
+llm = HuggingFacePipeline(pipeline=pipe)
 
-print(f"\nSession ended")
+# Custom Prompt
+template = """
+You are a friendly AI assistant currently nicknamed "Falcon" who is helping the user accomplish his tasks,
+and answers his questions informatively.
+
+Current conversation:
+{history}
+Human: {input}
+AI:""".strip()
+ 
+prompt = PromptTemplate(input_variables=["history", "input"], template=template)
+
+
+# Configuring conversation chain
+memory = ConversationBufferWindowMemory(
+    memory_key="history", k=num_saved_mes, return_only_outputs=True
+)
+
+# Making conversation chain
+chain = ConversationChain(
+    llm=llm,
+    memory=memory,
+    prompt=prompt,
+    verbose=True,
+)
+
+# Entering chat with Falcon
+while True:
+    user_input = input("\nYou: ")
+    if user_input.lower() == "quit":
+        break
+
+    response = chain(user_input)["response"]
+
+    # Processing response to remove stop word
+    response = response.replace("\nUser","").replace("\nHuman:","")
+    print("Falcon: ", response)
+
+# Extract the conversation history from the chain object
+conversation_history = chain.memory.buffer
+
+# Save the conversation history to a text file
+with open("conversation_history.txt", "w") as file:
+    file.writelines(conversation_history)
+
+print("\nSession ended")
