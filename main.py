@@ -112,6 +112,7 @@ chain = ConversationChain(
     verbose=True,
 )
 
+print(f"\nConversation started with Falcon. Type 'quit' to stop conversation.\n")
 # Entering chat with Falcon
 while True:
     user_input = input("\nYou: ")
