@@ -1,9 +1,15 @@
 from typing import List
+import chromadb 
 
+
+from langchain.vectorstores import Chroma
 from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferWindowMemory
 from langchain.chains import ConversationChain
 from langchain.llms import HuggingFacePipeline
+from langchain.document_loaders import PDFPlumberLoader
+from langchain.text_splitter import CharacterTextSplitter, TokenTextSplitter
+from langchain.embeddings import HuggingFaceEmbeddings
 
 import torch
 
@@ -13,7 +19,7 @@ from transformers import StoppingCriteria, StoppingCriteriaList
 
 # Parameters to tune
 num_saved_mes = 6
-max_length = 296 * 2
+max_length = 2048
 
 # This is a quick way to stop rambling
 class StopGenerationCriteria(StoppingCriteria):
@@ -62,7 +68,7 @@ model_4bit = model_4bit.eval()
 tokenizer = AutoTokenizer.from_pretrained(model_src, cache_dir=cache_dir)
 
 # Making criteria for stopping model from rambling or imagining
-stop_tokens = [["Human", ":"], ["AI", ":"]]
+stop_tokens = [["Human", ":"], ["AI", ":"], ["User", ":"]]
 stopping_criteria = StoppingCriteriaList(
     [StopGenerationCriteria(stop_tokens, tokenizer, model_4bit.device)]
 )
@@ -111,6 +117,28 @@ chain = ConversationChain(
     prompt=prompt,
     verbose=True,
 )
+EMB_SBERT_MPNET_BASE = "sentence-transformers/all-mpnet-base-v2"
+
+def create_emb():
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        return HuggingFaceEmbeddings(model_name=EMB_SBERT_MPNET_BASE, model_kwargs={"device": device})
+
+######### Vector Data ##########
+embedding = create_emb()
+
+# Load the pdf
+pdf_path = "wiki_data_short.pdf"
+loader = PDFPlumberLoader(pdf_path)
+documents = loader.load()
+
+# Split documents and create text snippets
+text_splitter = CharacterTextSplitter(chunk_size=100, chunk_overlap=0)
+texts = text_splitter.split_documents(documents)
+text_splitter = TokenTextSplitter(chunk_size=1000, chunk_overlap=10, encoding_name="cl100k_base")  # This the encoding for text-embedding-ada-002
+texts = text_splitter.split_documents(texts)
+
+persist_directory = "persist"
+vectordb = Chroma.from_documents(documents=texts, embedding=embedding, persist_directory=persist_directory)
 
 print(f"\nConversation started with Falcon. Type 'quit' to stop conversation.\n")
 # Entering chat with Falcon
