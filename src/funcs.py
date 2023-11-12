@@ -1,7 +1,6 @@
 from typing import List
-import chromadb 
 import os
-from src.funcs import create_vectordb
+
 from langchain.vectorstores import Chroma
 from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferWindowMemory
@@ -38,37 +37,6 @@ class StopGenerationCriteria(StoppingCriteria):
                 return True
         return False
 
-def create_emb():
-    
-    device = "cuda" if cuda.is_available() else "cpu"
-    return HuggingFaceEmbeddings(model_name=EMB_SBERT_MPNET_BASE, model_kwargs={"device": device})
-
-def create_vectordb() -> Chroma:
-    """Creates vectordb """
-
-    ######### Vector Data ##########
-    embedding = create_emb()
-
-    # Load the pdf
-    test_dir = "data"
-    test_file = "lecture06-processes.pdf"
-    pdf_path = os.path.join("..", test_dir, test_file)
-    print(f"This is current directory: {os.curdir()}\nThis is dir of supposed file {pdf_path}")
-    loader = PDFPlumberLoader(pdf_path)
-    documents = loader.load()
-
-    # Split documents and create text snippets
-    text_splitter = CharacterTextSplitter(chunk_size=100, chunk_overlap=0)
-    texts = text_splitter.split_documents(documents)
-     
-    # This the encoding for text-embedding-ada-002
-    text_splitter = TokenTextSplitter(chunk_size=1000, chunk_overlap=10, encoding_name="cl100k_base")
-    texts = text_splitter.split_documents(texts)
-
-    persist_directory = "chroma_db"
-    vectordb = Chroma.from_documents(documents=texts, embedding=embedding, persist_directory=persist_directory)
-    
-    return vectordb
 
 def create_model(model_src : str, cache_dir : dir):
 
@@ -114,3 +82,35 @@ def create_conv_chain(template : str, num_saved_mes : int,pipe) -> ConversationC
     )
 
     return chain
+
+def create_emb():
+    
+    device = "cuda" if cuda.is_available() else "cpu"
+    return HuggingFaceEmbeddings(model_name=EMB_SBERT_MPNET_BASE, model_kwargs={"device": device})
+
+def create_vectordb() -> Chroma:
+    """Creates vectordb """
+
+    ######### Vector Data ##########
+    embedding = create_emb()
+
+    # Load the pdf
+    test_dir = "data"
+    test_file = "lecture06-processes.pdf"
+    pdf_path = os.path.join("..", test_dir, test_file)
+    print(f"This is current directory: {os.curdir()}\nThis is dir of supposed file {pdf_path}")
+    loader = PDFPlumberLoader(pdf_path)
+    documents = loader.load()
+
+    # Split documents and create text snippets
+    text_splitter = CharacterTextSplitter(chunk_size=100, chunk_overlap=0)
+    texts = text_splitter.split_documents(documents)
+     
+    # This the encoding for text-embedding-ada-002
+    text_splitter = TokenTextSplitter(chunk_size=1000, chunk_overlap=10, encoding_name="cl100k_base")
+    texts = text_splitter.split_documents(texts)
+
+    persist_directory = "chroma_db"
+    vectordb = Chroma.from_documents(documents=texts, embedding=embedding, persist_directory=persist_directory)
+    
+    return vectordb
