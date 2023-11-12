@@ -1,2 +1,9 @@
+# Cached model
 models/*
+# Txt file of conversation history when program done
 conversation_history.txt
+
+# Ignore database
+chroma_db
+
+src/__pycache__
