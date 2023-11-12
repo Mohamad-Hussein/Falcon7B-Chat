@@ -1,68 +1,21 @@
-from typing import List
-import chromadb 
-import os
+from src.funcs import create_model, create_vectordb, create_conv_chain
+from src.funcs import StopGenerationCriteria
 
-from langchain.vectorstores import Chroma
-from langchain.prompts import PromptTemplate
-from langchain.memory import ConversationBufferWindowMemory
-from langchain.chains import ConversationChain
-from langchain.llms import HuggingFacePipeline
-from langchain.document_loaders import PDFPlumberLoader
-from langchain.text_splitter import CharacterTextSplitter, TokenTextSplitter
-from langchain.embeddings import HuggingFaceEmbeddings
-
-import torch
-
-from transformers import pipeline, BitsAndBytesConfig
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from transformers import StoppingCriteria, StoppingCriteriaList
+from transformers import pipeline
+from transformers import AutoTokenizer
+from transformers import StoppingCriteriaList
 
 # Parameters to tune
-num_saved_mes = 6
-max_length = 2048
+NUM_SAVED_MESSAGES = 6
+MAX_LENGTH = 2048
 
-# This is a quick way to stop rambling
-class StopGenerationCriteria(StoppingCriteria):
-    def __init__(
-        self, tokens: List[List[str]], tokenizer: AutoTokenizer, device: torch.device
-    ):
-        stop_token_ids = [tokenizer.convert_tokens_to_ids(t) for t in tokens]
-        self.stop_token_ids = [
-            torch.tensor(x, dtype=torch.long, device=device) for x in stop_token_ids
-        ]
- 
-    def __call__(
-        self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs
-    ) -> bool:
-        for stop_ids in self.stop_token_ids:
-            if torch.eq(input_ids[0][-len(stop_ids) :], stop_ids).all():
-                return True
-        return False
-    
-quantization_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_compute_dtype=torch.float16,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_use_double_quant=True,
-)
 
 # Choose model
 model_src = "tiiuae/falcon-7b-instruct"
 cache_dir = "models/"
 
 # Loading model
-model_4bit = AutoModelForCausalLM.from_pretrained(
-        model_src, 
-        device_map="auto",
-        quantization_config=quantization_config,
-        cache_dir=cache_dir,
-
-        # Change to true to use model from remote, and avoid downloading 20Gb
-        trust_remote_code=True
-        )
-
-# model_4bit.to_bettertransformer()
-# model_4bit = model_4bit.eval()
+model_4bit = create_model(model_src, cache_dir)
 
 # Making tokenizer
 tokenizer = AutoTokenizer.from_pretrained(model_src, cache_dir=cache_dir)
@@ -73,25 +26,6 @@ stopping_criteria = StoppingCriteriaList(
     [StopGenerationCriteria(stop_tokens, tokenizer, model_4bit.device)]
 )
 
-# Pipeline for models
-pipe = pipeline(
-        "text-generation",
-        model=model_4bit,
-        tokenizer=tokenizer,
-        use_cache=True,
-        device_map="auto",
-        stopping_criteria=stopping_criteria, # Criteria
-        max_length=max_length,
-        do_sample=True,
-        top_k=10,
-        num_return_sequences=1,
-        eos_token_id=tokenizer.eos_token_id,
-        pad_token_id=tokenizer.eos_token_id,
-)
-
-# Wrapping pipeline
-llm = HuggingFacePipeline(pipeline=pipe)
-
 # Custom Prompt
 template = """
 You are a friendly AI assistant currently nicknamed "Falcon" who is helping the user accomplish his tasks,
@@ -101,51 +35,46 @@ Current conversation:
 {history}
 Human: {input}
 AI:""".strip()
- 
-prompt = PromptTemplate(input_variables=["history", "input"], template=template)
 
-
-# Configuring conversation chain
-memory = ConversationBufferWindowMemory(
-    memory_key="history", k=num_saved_mes, return_only_outputs=True
+# Pipeline for models
+pipe = pipeline(
+        "text-generation",
+        model=model_4bit,
+        tokenizer=tokenizer,
+        use_cache=True,
+        device_map="auto",
+        stopping_criteria=stopping_criteria, # Criteria
+        max_length=MAX_LENGTH,
+        do_sample=True,
+        top_k=10,
+        num_return_sequences=1,
+        eos_token_id=tokenizer.eos_token_id,
+        pad_token_id=tokenizer.eos_token_id,
 )
 
 # Making conversation chain
-chain = ConversationChain(
-    llm=llm,
-    memory=memory,
-    prompt=prompt,
-    verbose=True,
+chain = create_conv_chain(
+    template=template,
+    num_saved_mes=NUM_SAVED_MESSAGES,
+    pipe=pipe
 )
-EMB_SBERT_MPNET_BASE = "sentence-transformers/all-mpnet-base-v2"
 
-def create_emb():
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        return HuggingFaceEmbeddings(model_name=EMB_SBERT_MPNET_BASE, model_kwargs={"device": device})
-
-######### Vector Data ##########
-embedding = create_emb()
-
-# Load the pdf
-pdf_path = os.path.join("data", "lecture06-processes.pdf")
-loader = PDFPlumberLoader(pdf_path)
-documents = loader.load()
-
-# Split documents and create text snippets
-text_splitter = CharacterTextSplitter(chunk_size=100, chunk_overlap=0)
-texts = text_splitter.split_documents(documents)
-text_splitter = TokenTextSplitter(chunk_size=1000, chunk_overlap=10, encoding_name="cl100k_base")  # This the encoding for text-embedding-ada-002
-texts = text_splitter.split_documents(texts)
-
-persist_directory = "chroma_db"
-vectordb = Chroma.from_documents(documents=texts, embedding=embedding, persist_directory=persist_directory)
+# Making Vector Database
+vectordb = create_vectordb()
 
 print(f"\nConversation started with Falcon. Type 'quit' to stop conversation.\n")
+
 # Entering chat with Falcon
 while True:
     user_input = input("\nYou: ")
     if user_input.lower() == "quit":
         break
+    
+    db_search = vectordb.similarity_search_with_relevance_scores(user_input)
+    search = db_search[0][0]
+    score = db_search[0][1]
+    
+    print(f"This is the doc: {search}\n This is the relevance score {score}")
 
     response = chain(user_input)["response"]
 
