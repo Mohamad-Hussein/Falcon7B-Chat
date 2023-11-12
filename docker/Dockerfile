@@ -1,8 +1,12 @@
 FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu18.04
 
 WORKDIR /home/chatbot
-ADD main.py /home/chatbot
-ADD env.yml /home/chatbot
+# RUN mkdir /home/chatbot/src
+
+# Things to add to dir
+ADD ../src /home/chatbot
+ADD ../main.py /home/chatbot
+ADD /docker/env-docker.yml /home/chatbot
 
 RUN apt-get update && apt-get install -y wget
 
@@ -16,7 +20,7 @@ ENV PATH /opt/conda/bin:$PATH
 RUN apt-get update && apt-get -y install gcc 
 
 # Installing require packages in conda
-RUN conda env create -f env.yml
+RUN conda env create -f env-docker.yml
 
 # Download docker gpu compatibility packages
 RUN apt-get install -y ca-certificates curl
@@ -27,6 +31,8 @@ RUN curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearm
  tee /etc/apt/sources.list.d/nvidia-container-toolkit.list \
   && apt-get update
 
+# This is to initialize model before hand
+RUN python -c "from src.funcs import create_model; create_model('tiiuae/falcon-7b-instruct', 'models/')"
 
 SHELL ["conda", "run", "-n", "ChatBot-env", "/bin/bash", "-c"]
 
