@@ -13,9 +13,9 @@ from langchain.embeddings import HuggingFaceEmbeddings
 from torch import cuda, eq, device
 from torch import float16, tensor, long, LongTensor, FloatTensor
 
-from transformers import pipeline, BitsAndBytesConfig
+from transformers import BitsAndBytesConfig
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from transformers import StoppingCriteria, StoppingCriteriaList
+from transformers import StoppingCriteria
 
 EMB_SBERT_MPNET_BASE = "sentence-transformers/all-mpnet-base-v2"
 
@@ -78,7 +78,7 @@ def create_conv_chain(template : str, num_saved_mes : int,pipe) -> ConversationC
         llm=llm,
         memory=memory,
         prompt=prompt,
-        verbose=True,
+        verbose=True
     )
 
     return chain
@@ -89,7 +89,7 @@ def create_emb():
     return HuggingFaceEmbeddings(model_name=EMB_SBERT_MPNET_BASE, model_kwargs={"device": device})
 
 def create_vectordb() -> Chroma:
-    """Creates vectordb """
+    """Creates vectordb out of pdf documents"""
 
     ######### Vector Data ##########
     embedding = create_emb()
@@ -97,8 +97,8 @@ def create_vectordb() -> Chroma:
     # Load the pdf
     test_dir = "data"
     test_file = "lecture06-processes.pdf"
-    pdf_path = os.path.join("..", test_dir, test_file)
-    print(f"This is current directory: {os.curdir()}\nThis is dir of supposed file {pdf_path}")
+    pdf_path = os.path.join(test_dir, test_file)
+    print(f"This is current directory: {os.getcwd()}\nThis is dir of supposed file {pdf_path}")
     loader = PDFPlumberLoader(pdf_path)
     documents = loader.load()
 
