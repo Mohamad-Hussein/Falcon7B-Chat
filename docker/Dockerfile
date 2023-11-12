@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y wget
 
 # Install conda
 RUN wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O Miniconda.sh && \
-	/bin/bash Miniconda.sh -b -p /opt/conda && \
-	rm Miniconda.sh
+  /bin/bash Miniconda.sh -b -p /opt/conda && \
+  rm Miniconda.sh
 
 ENV PATH /opt/conda/bin:$PATH
 
@@ -27,16 +27,17 @@ RUN apt-get install -y ca-certificates curl
 RUN distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
 RUN curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
   && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
- tee /etc/apt/sources.list.d/nvidia-container-toolkit.list \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  tee /etc/apt/sources.list.d/nvidia-container-toolkit.list \
   && apt-get update
 
 # This is to initialize model before hand
-RUN python -c "from src.funcs import create_model; create_model('tiiuae/falcon-7b-instruct', 'models/')"
+RUN echo pwd
 
 SHELL ["conda", "run", "-n", "ChatBot-env", "/bin/bash", "-c"]
 
 RUN echo "Make sure PyTorch is installed"
+# RUN python -c "from src.funcs import create_model; create_model('tiiuae/falcon-7b-instruct', 'models/')"
 RUN python -c "import torch"
 
 EXPOSE 5000
