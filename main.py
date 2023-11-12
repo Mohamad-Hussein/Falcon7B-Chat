@@ -1,6 +1,6 @@
 from typing import List
 import chromadb 
-
+import os
 
 from langchain.vectorstores import Chroma
 from langchain.prompts import PromptTemplate
@@ -58,11 +58,11 @@ model_4bit = AutoModelForCausalLM.from_pretrained(
         cache_dir=cache_dir,
 
         # Change to true to use model from remote, and avoid downloading 20Gb
-        trust_remote_code=False 
+        trust_remote_code=True
         )
 
-model_4bit.to_bettertransformer()
-model_4bit = model_4bit.eval()
+# model_4bit.to_bettertransformer()
+# model_4bit = model_4bit.eval()
 
 # Making tokenizer
 tokenizer = AutoTokenizer.from_pretrained(model_src, cache_dir=cache_dir)
@@ -127,7 +127,7 @@ def create_emb():
 embedding = create_emb()
 
 # Load the pdf
-pdf_path = "wiki_data_short.pdf"
+pdf_path = os.path.join("data", "lecture06-processes.pdf")
 loader = PDFPlumberLoader(pdf_path)
 documents = loader.load()
 
@@ -137,7 +137,7 @@ texts = text_splitter.split_documents(documents)
 text_splitter = TokenTextSplitter(chunk_size=1000, chunk_overlap=10, encoding_name="cl100k_base")  # This the encoding for text-embedding-ada-002
 texts = text_splitter.split_documents(texts)
 
-persist_directory = "persist"
+persist_directory = "chroma_db"
 vectordb = Chroma.from_documents(documents=texts, embedding=embedding, persist_directory=persist_directory)
 
 print(f"\nConversation started with Falcon. Type 'quit' to stop conversation.\n")
