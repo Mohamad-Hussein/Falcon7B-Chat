@@ -4,5 +4,5 @@ This is an attempt to configure a chatbot using the falcon-7b-instruct parameter
 ## Set up
 1. Download docker
 2. docker build -t chatbot-image:latest -f docker/Dockerfile .
-3. docker run --gpus all --name chatbot-container chatbot-image
+3. docker run -it --gpus all -v $(pwd):/workspace chatbot-image:latest bash
 4. ...
